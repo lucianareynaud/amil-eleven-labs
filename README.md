@@ -56,9 +56,6 @@ The fastest way to get started is with the automated installation script:
 ```bash
 # For production (default)
 ./setup-docker.sh
-
-# OR for development with hot-reload
-./setup-docker.sh --dev
 ```
 
 This comprehensive script will:
@@ -184,9 +181,6 @@ O modo mais rápido de começar é com o script de instalação automatizado:
 ```bash
 # Para produção (padrão)
 ./setup-docker.sh
-
-# OU para desenvolvimento com hot-reload
-./setup-docker.sh --dev
 ```
 
 Este script completo vai:

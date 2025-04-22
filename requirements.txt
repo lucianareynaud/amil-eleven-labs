@@ -6,11 +6,4 @@ python-multipart         # File upload support
 python-dotenv            # Environment vars
 faster-whisper           # Audio transcription
 requests                 # HTTP client for ElevenLabs API
-
-# Para instalar llama-cpp-python, use UMA das opções abaixo:
-
-# OPÇÃO 1 (recomendada): Instalar versão pré-compilada sem compilar
-# pip install llama-cpp-python --extra-index-url https://pypi.klauspost.com/simple/
-
-# OPÇÃO 2: Para instalar com compilação personalizada (requer git, cmake, compilador C++)
-# CMAKE_ARGS="-DLLAMA_CUBLAS=OFF" pip install llama-cpp-python
+llama-cpp-python         # LLM inference library

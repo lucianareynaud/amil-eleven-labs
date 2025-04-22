@@ -14,11 +14,8 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements file
 COPY requirements.txt .
 
-# Install Python dependencies (exceto llama-cpp-python)
-RUN pip install --no-cache-dir $(grep -v "llama-cpp-python" requirements.txt)
-
-# Instala llama-cpp-python pré-compilado específico para CPU
-RUN pip install --no-cache-dir llama-cpp-python --extra-index-url https://pypi.klauspost.com/simple/
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Create models directory
 RUN mkdir -p /app/models
