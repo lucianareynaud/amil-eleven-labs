@@ -2,18 +2,23 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system dependencies including FFmpeg
+# Install system dependencies including FFmpeg and git
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     curl \
     build-essential \
+    git \
+    cmake \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies (exceto llama-cpp-python)
+RUN pip install --no-cache-dir $(grep -v "llama-cpp-python" requirements.txt)
+
+# Instala llama-cpp-python pré-compilado específico para CPU
+RUN pip install --no-cache-dir llama-cpp-python --extra-index-url https://pypi.klauspost.com/simple/
 
 # Create models directory
 RUN mkdir -p /app/models
@@ -21,6 +26,9 @@ RUN mkdir -p /app/models
 # Copy application code
 COPY backend/ /app/backend/
 COPY static/ /app/static/
+
+# Add note about Mistral model
+RUN echo "Note: You must mount the model directory with the Mistral model file when running this container." > /app/IMPORTANT.txt
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \

@@ -33,6 +33,16 @@ MISTRAL_N_CTX = int(os.getenv("MISTRAL_N_CTX", "512"))
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 RETRY_DELAY = float(os.getenv("RETRY_DELAY", "0.5"))
 
+# Try to load the prompt template
+MISTRAL_PROMPT_TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "mistral-prompt-template.txt")
+MISTRAL_SYSTEM_PROMPT = ""
+if os.path.exists(MISTRAL_PROMPT_TEMPLATE_PATH):
+    with open(MISTRAL_PROMPT_TEMPLATE_PATH, "r", encoding="utf-8") as f:
+        MISTRAL_SYSTEM_PROMPT = f.read().strip()
+    logger.info(f"Loaded system prompt from {MISTRAL_PROMPT_TEMPLATE_PATH}")
+else:
+    logger.warning(f"Prompt template file not found at {MISTRAL_PROMPT_TEMPLATE_PATH}, using default system prompt")
+
 # ElevenLabs configuration
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "ErXwobaYiN019PkySvjV")  # Antoni (male) for pt-BR
@@ -145,21 +155,7 @@ async def rewrite_to_ura(text: str) -> str:
         raise HTTPException(503, "Language model not available. Please try again in a moment.")
     
     # System prompt for URA rewriting with SSML markup
-    system_prompt = """Você é um reescritor especializado em scripts de URA (Unidade de Resposta Audível) para empresas de saúde no Brasil.  
-Seu trabalho é receber um texto livre e produzir um roteiro pronto para TTS, em Português Brasileiro, formatado com marcações URA‑like para cadência e navegação por menu.  
-
-**Regras de formatação e marcações SSML (URA‑like):**  
-1. **Frases curtas:** ≤12 palavras por segmento.  
-2. **Pausas controladas:** após cada frase ou segmento, insira `<break time="500ms"/>`.  
-3. **Menu numérico:** use `<say-as interpret-as="digits">N</say-as>` para dígitos de opção. Ex.:  
-Para falar com um atendente, pressione <say-as interpret-as="digits">1</say-as>.<break time="500ms"/>
-4. **Prosódia e ênfase (opcional):** use `<prosody rate="90%">...</prosody>` ou `<emphasis level="moderate">...</emphasis>` em palavras-chave.  
-5. **Envoltório SSML:** coloque todo o roteiro dentro de `<speak>...</speak>`.  
-6. **Limite de segmentos:** máximo de 5 segmentos por resposta (5 pausas).  
-
-**Objetivo:**  
-- Transformar o texto de entrada em um roteiro de URA claro, conciso e auditivamente confortável.  
-- Garantir que o TTS (ElevenLabs) respeite pausas e pronúncia de dígitos."""
+    system_prompt = MISTRAL_SYSTEM_PROMPT
     
     # User prompt for rewriting
     user_prompt = f'Reescreva o trecho abaixo conforme as **Regras de formatação e marcações SSML**:\n\n"{text}"'

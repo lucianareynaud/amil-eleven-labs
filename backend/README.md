@@ -3,7 +3,7 @@
 This directory contains the backend implementation of the Voice-to-URA pipeline, which transforms audio recordings into URA-ready voice prompts using a combination of:
 
 1. **Whisper** for speech-to-text transcription
-2. **Local LLM** (via Ollama) for URA-style text rewriting
+2. **Local LLM** (Mistral via LLaMA.cpp) for URA-style text rewriting
 3. **ElevenLabs API** for high-quality voice synthesis
 
 ## Architecture
@@ -12,7 +12,7 @@ The pipeline follows these steps:
 
 1. **Audio Ingestion**: Upload audio file via FastAPI endpoint
 2. **Transcription**: Whisper model transcribes speech to text
-3. **URA Rewriting**: Local LLM reformats text to URA standards
+3. **URA Rewriting**: Mistral LLM reformats text to URA standards with SSML markup
 4. **Text Processing**: Validates, cleans, and annotates text with SSML
 5. **Voice Synthesis**: ElevenLabs API generates professional audio
 6. **Result Delivery**: Returns transcription, URA text, and audio file
@@ -24,17 +24,17 @@ The pipeline follows these steps:
    pip install -r ../requirements.txt
    ```
 
-2. Create a `.env` file with your configuration (see `.env.template` for reference)
+2. Create a `.env` file with your configuration (see `env.example` for reference)
    ```
    ELEVENLABS_API_KEY=your_key_here
    WHISPER_MODEL=tiny
-   OLLAMA_MODEL=purevoice-granite
-   OLLAMA_HOST=http://localhost:11434
+   MISTRAL_MODEL_PATH=/app/models/mistral-7b-instruct-v0.1.Q4_K_M.gguf
+   MISTRAL_N_CTX=512
    ```
 
-3. Make sure Ollama is running with the required model:
+3. Make sure you have downloaded the Mistral model:
    ```
-   ollama run purevoice-granite
+   ./download-mistral.sh
    ```
 
 ## Usage

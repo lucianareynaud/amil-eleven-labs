@@ -8,6 +8,9 @@ services:
       - "8000:8000"
     volumes:
       - ./models:/app/models
+      - ./mistral-prompt-template.txt:/app/mistral-prompt-template.txt
+      # Descomente a linha abaixo para desenvolvimento (permite editar código sem reconstruir imagem)
+      # - ./backend:/app/backend
     environment:
       # ElevenLabs Configuration
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
@@ -23,12 +26,17 @@ services:
       # Service Configuration
       - URA_HOST=0.0.0.0
       - URA_PORT=8000
+      # Building Configuration
+      - CMAKE_ARGS=-DLLAMA_CUBLAS=OFF
+      - FORCE_CMAKE=1
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    # Descomente a linha abaixo para modo de desenvolvimento com hot-reload
+    # command: python -m uvicorn run_ura_service:app --reload --host 0.0.0.0 --port 8000
     deploy:
       resources:
         limits:
