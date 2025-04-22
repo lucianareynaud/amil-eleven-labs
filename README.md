@@ -104,7 +104,7 @@ This will start the system using the configuration that enables hot-reload for t
 
 ### Web Interface Access
 
-Open http://localhost:8000 to use the Voice-to-URA Pipeline.
+Open http://localhost:8080 to use the Voice-to-URA Pipeline.
 
 ### Useful Commands
 
@@ -229,7 +229,7 @@ Isso iniciará o sistema com configuração que habilita hot-reload para o códi
 
 ### Acesso à Interface Web
 
-Abra http://localhost:8000 para usar o Pipeline Voz-para-URA.
+Abra http://localhost:8080 para usar o Pipeline Voz-para-URA.
 
 ### Comandos Úteis
 

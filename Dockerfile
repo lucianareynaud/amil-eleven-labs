@@ -33,7 +33,7 @@ ENV PYTHONUNBUFFERED=1 \
     MISTRAL_MODEL_PATH=/app/models/mistral-7b-instruct-v0.1.Q4_K_M.gguf \
     MISTRAL_N_CTX=512 \
     URA_HOST=0.0.0.0 \
-    URA_PORT=8000
+    URA_PORT=8080
 
 # Make backend scripts executable
 RUN chmod +x /app/backend/*.py
@@ -45,11 +45,11 @@ RUN ln -s /app/static /app/backend/static
 WORKDIR /app/backend
 
 # Expose the service port
-EXPOSE 8000
+EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8080/health || exit 1
 
 # Command to run the application
 CMD ["python", "run_ura_service.py"] 

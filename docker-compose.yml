@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: ura-pipeline
     ports:
-      - "8000:8000"
+      - "8080:8080"
     volumes:
       - ./models:/app/models
       - ./mistral-prompt-template.txt:/app/mistral-prompt-template.txt
@@ -25,18 +25,18 @@ services:
       - WHISPER_MODEL=tiny
       # Service Configuration
       - URA_HOST=0.0.0.0
-      - URA_PORT=8000
+      - URA_PORT=8080
       # Building Configuration
       - CMAKE_ARGS=-DLLAMA_CUBLAS=OFF
       - FORCE_CMAKE=1
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
     # Descomente a linha abaixo para modo de desenvolvimento com hot-reload
-    # command: python -m uvicorn run_ura_service:app --reload --host 0.0.0.0 --port 8000
+    # command: python -m uvicorn run_ura_service:app --reload --host 0.0.0.0 --port 8080
     deploy:
       resources:
         limits:
