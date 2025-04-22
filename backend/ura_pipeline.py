@@ -74,8 +74,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static directory if needed
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Mount static files - this needs to come AFTER the CORS middleware
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 # Load Whisper model once
 try:
@@ -272,8 +272,8 @@ def annotate_ura_ssml(text: str, pause_ms: int = 350) -> str:
 
 # --- 5. API ENDPOINTS ------------------------------------------------------
 
-@app.get("/")
-async def root():
+@app.get("/api")
+async def api_info():
     return {"status": "ready", "message": "Voice-to-URA Pipeline API"}
 
 @app.get("/health")
