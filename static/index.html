@@ -407,8 +407,12 @@
   <iframe id="mic-access-iframe" src="about:blank"></iframe>
 
   <script>
-    // Determine API base URL: use current origin or default to localhost:8080
+    // Use the same origin or default to localhost:8080
     const API_BASE_URL = (window.location.origin && window.location.origin !== 'null') ? window.location.origin : 'http://localhost:8080';
+    
+    // Make sure static assets are referenced correctly
+    const STATIC_PATH = `${API_BASE_URL}/static`;
+    
     // DOM Elements
     const btn = document.getElementById('record-btn');
     const cta = document.getElementById('cta-text');

@@ -74,8 +74,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files - this needs to come AFTER the CORS middleware
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+# Mount static files but don't let it intercept API endpoints
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Load Whisper model once
 try:
@@ -271,6 +271,10 @@ def annotate_ura_ssml(text: str, pause_ms: int = 350) -> str:
     return "<speak>" + " ".join(ssml_chunks) + "</speak>"
 
 # --- 5. API ENDPOINTS ------------------------------------------------------
+
+@app.get("/")
+async def root():
+    return FileResponse("static/index.html")
 
 @app.get("/api")
 async def api_info():
