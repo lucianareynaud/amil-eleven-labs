@@ -19,8 +19,8 @@ services:
       - ELEVENLABS_STABILITY=${ELEVENLABS_STABILITY:-0.50}
       - ELEVENLABS_SIMILARITY_BOOST=${ELEVENLABS_SIMILARITY_BOOST:-0.75}
       # Mistral Configuration
-      - MISTRAL_MODEL_PATH=/app/models/mistral-7b-instruct-v0.1.Q4_K_M.gguf
-      - MISTRAL_N_CTX=512
+      - MISTRAL_MODEL_PATH=/app/models/mistral-7b-instruct-v0.2.Q4_K_M.gguf
+      - MISTRAL_N_CTX=4096
       # Whisper Configuration
       - WHISPER_MODEL=tiny
       # Service Configuration

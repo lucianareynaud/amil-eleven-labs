@@ -30,8 +30,8 @@ RUN echo "Note: You must mount the model directory with the Mistral model file w
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \
     WHISPER_MODEL=tiny \
-    MISTRAL_MODEL_PATH=/app/models/mistral-7b-instruct-v0.1.Q4_K_M.gguf \
-    MISTRAL_N_CTX=512 \
+    MISTRAL_MODEL_PATH=/app/models/mistral-7b-instruct-v0.2.Q4_K_M.gguf \
+    MISTRAL_N_CTX=4096 \
     URA_HOST=0.0.0.0 \
     URA_PORT=8080
 

@@ -94,7 +94,7 @@ try:
         n_batch=512,
         verbose=False
     )
-    logger.info(f"Loaded Mistral model: {MISTRAL_MODEL_PATH}")
+    logger.info(f"Loaded Mistral model: {MISTRAL_MODEL_PATH} with context size {MISTRAL_N_CTX}")
 except Exception as e:
     logger.error(f"Failed to load Mistral model: {str(e)}")
     mistral_model = None
@@ -138,7 +138,7 @@ async def ensure_mistral_ready():
                     n_batch=512,
                     verbose=False
                 )
-                logger.info(f"Loaded Mistral model on attempt {attempt+1}")
+                logger.info(f"Loaded Mistral model on attempt {attempt+1} with context size {MISTRAL_N_CTX}")
                 return True
         except Exception as e:
             logger.warning(f"Failed to load Mistral model on attempt {attempt+1}: {str(e)}")
@@ -165,10 +165,10 @@ async def rewrite_to_ura(text: str) -> str:
         prompt = f"<s>[INST] {system_prompt} [/INST]</s>[INST] {user_prompt} [/INST]"
         
         # Generate response with Mistral
-        logger.info("Generating URA rewrite with Mistral")
+        logger.info(f"Generating URA rewrite with Mistral (context size: {MISTRAL_N_CTX})")
         response = mistral_model.create_completion(
             prompt=prompt,
-            max_tokens=1024,
+            max_tokens=min(2048, MISTRAL_N_CTX // 2),  # Use up to half of context for output
             temperature=0.1,
             top_p=0.9,
             stop=["</s>", "[INST]"],

@@ -6,8 +6,8 @@ download_mistral_model() {
     mkdir -p models
 
     # Url e nome do arquivo do modelo
-    MODEL_URL="https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.1-GGUF/resolve/main/mistral-7b-instruct-v0.1.Q4_K_M.gguf"
-    MODEL_FILENAME="mistral-7b-instruct-v0.1.Q4_K_M.gguf"
+    MODEL_URL="https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf"
+    MODEL_FILENAME="mistral-7b-instruct-v0.2.Q4_K_M.gguf"
     MODEL_PATH="models/$MODEL_FILENAME"
 
     # Verificar se o arquivo já existe
