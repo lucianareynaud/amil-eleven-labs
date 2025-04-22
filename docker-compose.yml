@@ -1,0 +1,37 @@
+services:
+  ura-pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ura-pipeline
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models
+    environment:
+      # ElevenLabs Configuration
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID:-ErXwobaYiN019PkySvjV}
+      - ELEVENLABS_MODEL_ID=${ELEVENLABS_MODEL_ID:-eleven_multilingual_v1}
+      - ELEVENLABS_STABILITY=${ELEVENLABS_STABILITY:-0.50}
+      - ELEVENLABS_SIMILARITY_BOOST=${ELEVENLABS_SIMILARITY_BOOST:-0.75}
+      # Mistral Configuration
+      - MISTRAL_MODEL_PATH=/app/models/mistral-7b-instruct-v0.1.Q4_K_M.gguf
+      - MISTRAL_N_CTX=512
+      # Whisper Configuration
+      - WHISPER_MODEL=tiny
+      # Service Configuration
+      - URA_HOST=0.0.0.0
+      - URA_PORT=8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G 

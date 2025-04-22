@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="origin-trial" content="temporary_for_microphone_access">
+  <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+  <title>Amil Voice-to-URA Pipeline</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      background: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+      color: #000;
+    }
+    #container { 
+      text-align: center;
+      max-width: 600px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    #record-btn {
+      width: 80px; height: 80px;
+      border: none; border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      cursor: pointer; 
+      transition: all 0.3s ease;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 40px;
+    }
+    #record-btn::after {
+      content: '';
+      display: block;
+      width: 30px; height: 30px;
+      border-radius: 50%;
+      background: #ff3b30;
+      transition: all 0.2s ease;
+    }
+    #record-btn.disabled {
+      cursor: not-allowed; 
+      opacity: 0.5;
+      pointer-events: none;
+    }
+    #record-btn.recording::after {
+      animation: redWhitePulse 1.5s ease-in-out infinite;
+    }
+    @keyframes redWhitePulse {
+      0% { transform: scale(1); background-color: #ff3b30; box-shadow: 0 0 0 0 rgba(255,59,48,0.3); }
+      50% { transform: scale(1.1); background-color: #ffffff; box-shadow: 0 0 0 15px rgba(255,59,48,0); }
+      100% { transform: scale(1); background-color: #ff3b30; box-shadow: 0 0 0 0 rgba(255,59,48,0); }
+    }
+    /* Voice wave visualization */
+    #waveform-container {
+      width: 200px; height: 60px;
+      margin: 20px auto;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #waveform {
+      width: 100%; height: 100%;
+      display: none;
+    }
+    #cta-text {
+      margin-top: 15px; 
+      font-size: 1.1rem;
+      font-weight: 500;
+    }
+    #transcript {
+      margin-top: 30px; 
+      font-size: 1rem;
+      color: #333; 
+      min-height: 1.2em;
+      max-width: 500px;
+    }
+    #response-container {
+      margin-top: 20px;
+      width: 100%;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #audio-control-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 20px auto 0;
+      position: relative;
+      width: 100%;
+    }
+    #stop-audio-btn {
+      width: 80px; height: 80px;
+      border: none; border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: none;
+      position: relative;
+      align-items: center;
+      justify-content: center;
+    }
+    #stop-audio-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    #stop-audio-btn:active {
+      transform: scale(0.95);
+    }
+    
+    /* Square stop button styling */
+    #stop-audio-btn svg rect {
+      fill: #000;
+      stroke: #000;
+    }
+    #response-waveform {
+      width: 300px; height: 40px;
+      margin: 10px auto;
+      display: none;
+    }
+    #response-text {
+      margin-top: 10px;
+      font-size: 1rem;
+      min-height: 1.2em;
+      max-width: 500px;
+      line-height: 1.4;
+    }
+    
+    /* Loading indicator for long responses */
+    .loading-dots {
+      display: none !important; /* Force hide the loading dots */
+      position: relative;
+      width: 80px;
+      height: 20px;
+    }
+    .loading-dots div {
+      position: absolute;
+      top: 8px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #000;
+    }
+    /* Ensure browser shows a notification of microphone access */
+    #mic-access-iframe {
+      display: none;
+      width: 0;
+      height: 0;
+      border: 0;
+    }
+    
+    /* Title and subtitle styling */
+    .header-text {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 30px;
+    }
+    .title {
+      font-size: 2.5rem;
+      font-weight: bold;
+      margin: 0;
+    }
+    .subtitle {
+      font-size: 1.8rem;
+      font-weight: 500;
+      margin: 5px 0;
+    }
+    .tagline {
+      font-size: 1.5rem;
+      font-weight: 500;
+      margin: 5px 0 20px 0;
+    }
+    p.description {
+      font-size: 1.1rem;
+      line-height: 1.6;
+      margin-bottom: 40px;
+    }
+    
+    .helper-text {
+      font-size: 0.9rem;
+      color: #666;
+      font-style: italic;
+      line-height: 1.4;
+    }
+
+    /* Approval buttons styling */
+    #approval-container {
+      display: none;
+      margin-top: 20px;
+      width: 100%;
+      justify-content: center;
+      gap: 20px;
+    }
+
+    .approval-btn {
+      padding: 10px 15px;
+      border: none;
+      border-radius: 4px;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    #approve-btn {
+      background-color: #34c759;
+      color: white;
+    }
+
+    #approve-btn:hover {
+      background-color: #2eb350;
+    }
+
+    #edit-btn {
+      background-color: #007aff;
+      color: white;
+    }
+
+    #edit-btn:hover {
+      background-color: #0062cc;
+    }
+
+    /* Edit form styling */
+    #edit-container {
+      display: none;
+      margin-top: 20px;
+      width: 100%;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #edit-form {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    #edit-text {
+      width: 100%;
+      min-height: 80px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 1rem;
+      font-family: inherit;
+    }
+
+    .form-buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    #submit-edit-btn {
+      background-color: #007aff;
+      color: white;
+      padding: 8px 15px;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+
+    #cancel-edit-btn {
+      background-color: #8e8e93;
+      color: white;
+      padding: 8px 15px;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+
+    /* Success message styling */
+    #success-message {
+      display: none;
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #34c759;
+      color: white;
+      border-radius: 4px;
+      text-align: center;
+    }
+
+    /* Download button styling */
+    #download-container {
+      display: none;
+      margin-top: 20px;
+      width: 100%;
+      text-align: center;
+    }
+
+    #download-btn {
+      background-color: #007aff;
+      color: white;
+      padding: 12px 25px;
+      border: none;
+      border-radius: 4px;
+      font-size: 1.1rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    #download-btn:hover {
+      background-color: #0062cc;
+      transform: scale(1.05);
+    }
+
+    #download-icon {
+      width: 20px;
+      height: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div class="header-text">
+      <h1 class="title">Voice-to-URA Pipeline</h1>
+      <h2 class="subtitle">Amil Health Insurance</h2>
+      <h3 class="tagline">Criador de Prompts URA</h3>
+    </div>
+    
+    <p class="description">Transforme gravações em prompts URA profissionais<br>
+    com transcrição automática, formatação para URA e síntese de voz de alta qualidade em português brasileiro</p>
+    
+    <button id="record-btn" aria-label="Record"></button>
+    <p id="cta-text">Pressione para gravar</p>
+    
+    <div id="waveform-container">
+      <canvas id="waveform"></canvas>
+    </div>
+    
+    <!-- Transcript display -->
+    <div id="transcript">
+      <span class="helper-text">Grave o áudio para criar prompts de URA<br>
+      Sua gravação será transcrita, reformatada para padrões URA, e sintetizada com voz de alta qualidade</span>
+    </div>
+    
+    <div id="response-container">
+      <div id="audio-control-container">
+        <button id="stop-audio-btn" aria-label="Stop Audio">
+          <svg viewBox="0 0 24 24" width="24" height="24">
+            <rect x="6" y="6" width="12" height="12" rx="1" fill="#000" stroke="#000" stroke-width="2"></rect>
+          </svg>
+        </button>
+      </div>
+      <canvas id="response-waveform"></canvas>
+      <p id="response-text"></p>
+      <div class="loading-dots" style="display:none !important;">
+      </div>
+    </div>
+
+    <!-- Approval buttons -->
+    <div id="approval-container">
+      <button id="approve-btn" class="approval-btn">✓ Aprovar</button>
+      <button id="edit-btn" class="approval-btn">✎ Editar</button>
+    </div>
+
+    <!-- Download button -->
+    <div id="download-container">
+      <button id="download-btn">
+        <svg id="download-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        Baixar áudio URA
+      </button>
+    </div>
+
+    <!-- Edit form -->
+    <div id="edit-container">
+      <form id="edit-form">
+        <textarea id="edit-text" placeholder="Edite o texto URA aqui..."></textarea>
+        <div class="form-buttons">
+          <button type="button" id="cancel-edit-btn">Cancelar</button>
+          <button type="submit" id="submit-edit-btn">Enviar alterações</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Success message -->
+    <div id="success-message">
+      Prompt URA aprovado com sucesso!
+    </div>
+  </div>
+
+  <!-- Add a special iframe to ensure microphone access works over insecure connections -->
+  <iframe id="mic-access-iframe" src="about:blank"></iframe>
+
+  <script>
+    // Determine API base URL: use current origin or default to localhost:8000
+    const API_BASE_URL = (window.location.origin && window.location.origin !== 'null') ? window.location.origin : 'http://localhost:8000';
+    // DOM Elements
+    const btn = document.getElementById('record-btn');
+    const cta = document.getElementById('cta-text');
+    const transcriptEl = document.getElementById('transcript');
+    const responseWaveform = document.getElementById('response-waveform');
+    const responseText = document.getElementById('response-text');
+    const waveformCanvas = document.getElementById('waveform');
+    const micIframe = document.getElementById('mic-access-iframe');
+    
+    // Audio streams and objects
+    let audioContext = null;
+    let analyser = null;
+    let micAudioStream = null;
+    let recorder = null;
+    let audioChunks = [];
+    let isRecording = false;
+    let visualizationFrame = null;
+    let isButtonDebouncing = false;
+    let audioElement = null;
+    
+    // Global variables for current URA state
+    let currentUraText = '';
+    let currentRequestId = '';
+    let currentAudioUrl = '';
+    
+    // Initialize the app
+    window.onload = function() {
+      // Simply try to initialize everything regardless of protocol
+      initializeAudioContext();
+      
+      // Ensure click handler is properly attached with debounce
+      btn.addEventListener('click', debounce(handleButtonClick, 300));
+      
+      // Add stop audio button handler
+      document.getElementById('stop-audio-btn').addEventListener('click', stopAudioPlayback);
+      
+      // Enable the recording button
+      btn.disabled = false;
+      
+      // Add approval button handlers
+      document.getElementById('approve-btn').addEventListener('click', handleApproval);
+      document.getElementById('edit-btn').addEventListener('click', handleEditRequest);
+      document.getElementById('cancel-edit-btn').addEventListener('click', cancelEdit);
+      document.getElementById('edit-form').addEventListener('submit', submitEdit);
+      
+      // Add download button handler
+      document.getElementById('download-btn').addEventListener('click', handleDownload);
+    };
+    
+    // Initialize the audio context
+    function initializeAudioContext() {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AudioContext();
+        
+        // Force activation of audio context
+        if (audioContext.state === 'suspended') {
+          audioContext.resume();
+        }
+      } catch (e) {
+        console.error('Audio context initialization failed:', e);
+      }
+    }
+    
+    // Debounce function to prevent multiple rapid clicks
+    function debounce(func, wait) {
+      return function(...args) {
+        if (isButtonDebouncing) return;
+        isButtonDebouncing = true;
+        
+        func.apply(this, args);
+        
+        setTimeout(() => {
+          isButtonDebouncing = false;
+        }, wait);
+      };
+    }
+    
+    // Handle the button click
+    function handleButtonClick(event) {
+      // Prevent any default behavior
+      if (event) {
+        event.preventDefault();
+      }
+      
+      // Don't do anything if the button is disabled
+      if (btn.disabled) {
+        console.log('Button is disabled, ignoring click');
+        return;
+      }
+      
+      console.log('Button clicked, recording state:', isRecording);
+      
+      if (isRecording) {
+        stopRecording();
+      } else {
+        if (micAudioStream) {
+          // We already have microphone access, start recording immediately
+          beginRecording();
+        } else {
+          // Need to request microphone access first
+          startMicrophoneCapture();
+        }
+      }
+    }
+    
+    // Start microphone capture
+    function startMicrophoneCapture() {
+      // Make sure we have an audio context
+      if (!audioContext) {
+        initializeAudioContext();
+      }
+      
+      // Disable button and show status
+      btn.disabled = true;
+      cta.textContent = 'Accessing microphone...';
+      
+      // Request microphone access using all available methods
+      const constraints = {
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      };
+      
+      console.log('Requesting microphone access...');
+      
+      // Try the standard approach first
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia(constraints)
+          .then(handleSuccessfulMicrophoneAccess)
+          .catch(handleMicrophoneAccessError);
+      } 
+      // Fallback for older browsers
+      else if (navigator.getUserMedia) {
+        navigator.getUserMedia(constraints, handleSuccessfulMicrophoneAccess, handleMicrophoneAccessError);
+      }
+      // Fallback for webkit/moz prefixed implementations
+      else if (navigator.webkitGetUserMedia || navigator.mozGetUserMedia) {
+        const legacyGetUserMedia = navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+        legacyGetUserMedia.call(navigator, constraints, handleSuccessfulMicrophoneAccess, handleMicrophoneAccessError);
+      }
+      // No getUserMedia support
+      else {
+        handleMicrophoneAccessError(new Error('No getUserMedia support available in this browser'));
+      }
+    }
+    
+    // Handle successful microphone access
+    function handleSuccessfulMicrophoneAccess(stream) {
+      console.log('Microphone access granted!');
+      micAudioStream = stream;
+      
+      // Re-enable button
+      btn.disabled = false;
+      
+      // Clear any previous transcript
+      transcriptEl.textContent = '';
+      responseText.textContent = '';
+      
+      // Set up the audio analyzer for visualization
+      setupAudioProcessing();
+      
+      // Start recording immediately when permission is granted
+      beginRecording();
+    }
+    
+    // Handle microphone access error
+    function handleMicrophoneAccessError(error) {
+      console.error('Could not access microphone:', error);
+      
+      // Re-enable button
+      btn.disabled = false;
+      
+      // Display error message based on error type
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        cta.textContent = 'Microphone access denied. Click to request again.';
+      } else if (error.name === 'NotFoundError') {
+        cta.textContent = 'No microphone detected. Please connect a microphone.';
+      } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+        cta.textContent = 'Microphone is in use by another application.';
+      } else if (error.name === 'SecurityError') {
+        cta.textContent = 'Microphone access not allowed on insecure connection.';
+      } else {
+        cta.textContent = 'Microphone error. Click to try again.';
+      }
+    }
+    
+    // Set up audio processing
+    function setupAudioProcessing() {
+      if (!audioContext) {
+        initializeAudioContext();
+      }
+      
+      try {
+        // Create the audio source
+        const source = audioContext.createMediaStreamSource(micAudioStream);
+        
+        // Create an analyzer
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.6;
+        
+        // Connect the source to the analyzer
+        source.connect(analyser);
+        
+        console.log('Audio processing set up successfully');
+      } catch (e) {
+        console.error('Error setting up audio processing:', e);
+      }
+    }
+    
+    // Start recording
+    function beginRecording() {
+      console.log('Beginning recording...');
+      
+      try {
+        isRecording = true;
+        btn.classList.add('recording');
+        cta.textContent = 'Capturing voice. Press to stop.';
+        
+        // Show the waveform
+        waveformCanvas.style.display = 'block';
+        
+        // Start visualization
+        visualizeAudio();
+        
+        // Set up MediaRecorder
+        audioChunks = [];
+        
+        // Try with specific mime type
+        recorder = new MediaRecorder(micAudioStream);
+        recorder.ondataavailable = e => audioChunks.push(e.data);
+        recorder.start();
+        console.log('MediaRecorder started:', recorder.state);
+      } catch (e) {
+        console.error('MediaRecorder error:', e);
+        isRecording = false;
+        btn.classList.remove('recording');
+        cta.textContent = 'Recording failed. Try again.';
+      }
+    }
+    
+    // Stop recording
+    function stopRecording() {
+      console.log('Stopping recording...');
+      if (!isRecording) return;
+      
+      isRecording = false;
+      btn.classList.remove('recording');
+      cta.textContent = 'Processing...';
+      
+      // Stop visualization
+      cancelAnimationFrame(visualizationFrame);
+      waveformCanvas.style.display = 'none';
+      
+      // Stop recording
+      if (recorder && recorder.state !== 'inactive') {
+        recorder.onstop = handleRecordingComplete;
+        recorder.stop();
+        console.log('MediaRecorder stopped');
+      } else {
+        console.log('No active recorder to stop');
+        handleRecordingComplete();
+      }
+    }
+    
+    // Handle completed recording
+    function handleRecordingComplete() {
+      if (audioChunks.length === 0) {
+        cta.textContent = 'No audio captured. Try again.';
+        return;
+      }
+      
+      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+      
+      // Create form data for upload
+      const formData = new FormData();
+      formData.append('file', audioBlob, 'recording.webm');
+      
+      // Show processing status
+      cta.textContent = 'Processing URA prompt...';
+      
+      // Send to backend - use the correct URA pipeline endpoint
+      fetch(`${API_BASE_URL}/process-audio`, {
+        method: 'POST',
+        body: formData
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Server error: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        // Display original transcript and URA format
+        transcriptEl.innerHTML = `<strong>Original:</strong> ${data.transcript || 'Transcrição não disponível'}<br>
+                                 <strong>Formato URA:</strong> ${data.ura_text || 'Formatação URA falhou'}`;
+        
+        // Play URA audio response
+        if (data.request_id) {
+          const audioUrl = `${API_BASE_URL}/download/${data.request_id}`;
+          playUraAudio(audioUrl, data.ura_text);
+        } else if (data.output_file) {
+          responseText.textContent = `Áudio gerado e salvo em: ${data.output_file}`;
+        } else {
+          responseText.textContent = 'Erro: Nenhum áudio foi gerado';
+        }
+      })
+      .catch(error => {
+        console.error('Processing error:', error);
+        transcriptEl.textContent = `Erro: ${error.message}`;
+      })
+      .finally(() => {
+        cta.textContent = 'Pressione para gravar';
+      });
+    }
+    
+    // Play URA audio response
+    function playUraAudio(audioUrl, uraText) {
+      // Set voice speaking message with a hint to stop
+      responseText.textContent = `Reproduzindo prompt URA... (Pressione o botão parar para encerrar)`;
+      
+      // Create and play audio from URL
+      audioElement = new Audio(audioUrl);
+      
+      audioElement.onplay = () => {
+        // Only show waveform and stop button when audio starts playing
+        responseWaveform.style.display = 'block';
+        document.getElementById('stop-audio-btn').style.display = 'flex';
+        visualizeResponseAudio(audioElement);
+      };
+      
+      audioElement.onended = () => {
+        handleUraAudioFinished(uraText);
+      };
+      
+      // Play the audio
+      audioElement.play().catch(err => {
+        console.error('Audio playback error:', err);
+        handleUraAudioFinished(uraText);
+      });
+    }
+    
+    // Handle URA audio finished or stopped
+    function handleUraAudioFinished(uraText) {
+      responseWaveform.style.display = 'none';
+      document.getElementById('stop-audio-btn').style.display = 'none';
+      responseText.innerHTML = `<strong>Prompt URA Final:</strong><br>${uraText || ''}`;
+      
+      // Show approval buttons
+      document.getElementById('approval-container').style.display = 'flex';
+      
+      // Store the current URA text and request ID for later use
+      currentUraText = uraText;
+      if (audioElement && audioElement.src) {
+        currentAudioUrl = audioElement.src;
+        currentRequestId = audioElement.src.split('/').pop();
+      }
+    }
+    
+    // Handle approval of URA prompt
+    function handleApproval() {
+      if (!currentRequestId) {
+        console.error('No request ID available for approval');
+        return;
+      }
+      
+      // Show success message
+      const successMessage = document.getElementById('success-message');
+      successMessage.style.display = 'block';
+      
+      // Hide approval buttons
+      document.getElementById('approval-container').style.display = 'none';
+      
+      // Show download button
+      document.getElementById('download-container').style.display = 'block';
+      
+      // Log approval
+      console.log(`URA prompt ${currentRequestId} approved`);
+    }
+    
+    // Handle download of the approved URA audio
+    function handleDownload() {
+      if (!currentAudioUrl) {
+        console.error('No audio URL available for download');
+        return;
+      }
+      
+      // Create a temporary link element and trigger the download
+      const downloadLink = document.createElement('a');
+      downloadLink.href = currentAudioUrl;
+      downloadLink.download = `ura_prompt_${currentRequestId}.mp3`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+      
+      // Show feedback message
+      responseText.innerHTML += '<br><br><span style="color: #34c759;">✓ Áudio baixado com sucesso!</span>';
+      
+      // Reset interface after a delay
+      setTimeout(() => {
+        // Keep the download button visible for additional downloads
+        document.getElementById('success-message').style.display = 'none';
+        
+        // But allow new recordings
+        btn.disabled = false;
+      }, 3000);
+    }
+    
+    // Handle edit request
+    function handleEditRequest() {
+      // Hide approval buttons
+      document.getElementById('approval-container').style.display = 'none';
+      // Hide download button if visible
+      document.getElementById('download-container').style.display = 'none';
+      
+      // Show edit form
+      const editContainer = document.getElementById('edit-container');
+      editContainer.style.display = 'flex';
+      
+      // Populate textarea with current URA text
+      document.getElementById('edit-text').value = currentUraText;
+    }
+    
+    // Cancel edit
+    function cancelEdit() {
+      // Hide edit form
+      document.getElementById('edit-container').style.display = 'none';
+      
+      // Show approval buttons again
+      document.getElementById('approval-container').style.display = 'flex';
+    }
+    
+    // Submit edited text
+    function submitEdit(event) {
+      event.preventDefault();
+      
+      // Get edited text
+      const editedText = document.getElementById('edit-text').value.trim();
+      
+      if (!editedText) {
+        alert('Por favor, insira o texto editado.');
+        return;
+      }
+      
+      // Hide edit form
+      document.getElementById('edit-container').style.display = 'none';
+      
+      // Show a processing message
+      responseText.textContent = 'Regenerando áudio com suas edições...';
+      
+      // Send edited text to backend for regeneration
+      regenerateUraWithEdits(editedText);
+    }
+    
+    // Regenerate URA with edited text
+    function regenerateUraWithEdits(editedText) {
+      const formData = new FormData();
+      formData.append('text', editedText);
+      
+      fetch(`${API_BASE_URL}/regenerate-audio`, {
+        method: 'POST',
+        body: formData
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Erro do servidor: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        // Update transcript display with edited text
+        const originalText = transcriptEl.innerHTML.split('<br>')[0];
+        transcriptEl.innerHTML = `${originalText}<br><strong>Formato URA (Editado):</strong> ${editedText}`;
+        
+        // Play regenerated audio
+        if (data.request_id) {
+          const audioUrl = `${API_BASE_URL}/download/${data.request_id}`;
+          playUraAudio(audioUrl, editedText);
+        } else if (data.output_file) {
+          responseText.textContent = `Áudio regenerado e salvo em: ${data.output_file}`;
+        } else {
+          responseText.textContent = 'Erro: Nenhum áudio foi gerado';
+        }
+      })
+      .catch(error => {
+        console.error('Regeneration error:', error);
+        responseText.textContent = `Erro ao regenerar áudio: ${error.message}`;
+        // Show approval buttons again on error
+        document.getElementById('approval-container').style.display = 'flex';
+      });
+    }
+    
+    // Play audio response (legacy function, keeping for compatibility)
+    function playAudioResponse(audioBase64, voiceName, responseText) {
+      if (!audioBase64) {
+        responseText.textContent = responseText || 'No response available';
+        return;
+      }
+      
+      // Set voice speaking message with a hint to stop
+      responseText.textContent = `Audio is playing... (Press stop button to end)`;
+      
+      // Create and play audio
+      audioElement = new Audio(`data:audio/mp3;base64,${audioBase64}`);
+      
+      audioElement.onplay = () => {
+        // Only show waveform and stop button when audio starts playing
+        responseWaveform.style.display = 'block';
+        document.getElementById('stop-audio-btn').style.display = 'flex';
+        visualizeResponseAudio(audioElement);
+      };
+      
+      audioElement.onended = () => {
+        handleAudioFinished(responseText);
+      };
+      
+      // Play the audio
+      audioElement.play().catch(err => {
+        console.error('Audio playback error:', err);
+        handleAudioFinished(responseText);
+      });
+    }
+    
+    // Handle audio finished or stopped (legacy function)
+    function handleAudioFinished(responseText) {
+      responseWaveform.style.display = 'none';
+      document.getElementById('stop-audio-btn').style.display = 'none';
+      responseText.textContent = responseText || '';
+    }
+    
+    // Stop audio playback
+    function stopAudioPlayback() {
+      if (audioElement && !audioElement.paused) {
+        audioElement.pause();
+        audioElement.currentTime = 0;
+        
+        // Check which type of audio we're playing based on source
+        if (audioElement.src.includes('/download/')) {
+          // URA audio playback
+          const uraText = transcriptEl.innerHTML.split('<br>')[1].replace('<strong>URA Format:</strong> ', '');
+          handleUraAudioFinished(uraText);
+        } else {
+          // Legacy audio playback
+          handleAudioFinished(responseText.textContent);
+        }
+      }
+    }
+    
+    // Visualize microphone input
+    function visualizeAudio() {
+      if (!analyser) return;
+      
+      // Create visualization data array
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      
+      // Get canvas context
+      const canvas = waveformCanvas;
+      const ctx = canvas.getContext('2d');
+      
+      // Set canvas dimensions
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+      
+      // Animation function
+      function draw() {
+        visualizationFrame = requestAnimationFrame(draw);
+        
+        // Get data
+        analyser.getByteFrequencyData(dataArray);
+        
+        // Clear canvas
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw bars
+        const barWidth = (canvas.width / dataArray.length) * 2.5;
+        let x = 0;
+        
+        for (let i = 0; i < dataArray.length; i++) {
+          const barHeight = (dataArray[i] / 255) * canvas.height;
+          
+          // Grayscale based on amplitude
+          const intensity = Math.min(Math.floor((dataArray[i] / 255) * 200) + 55, 255);
+          ctx.fillStyle = `rgb(${intensity},${intensity},${intensity})`;
+          
+          // Draw bar
+          const y = canvas.height - barHeight;
+          ctx.fillRect(x, y, barWidth - 1, barHeight);
+          
+          x += barWidth;
+        }
+      }
+      
+      // Start drawing
+      draw();
+    }
+    
+    // Visualize response audio
+    function visualizeResponseAudio(audio) {
+      // Create a new audio context for response visualization
+      const respCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = respCtx.createMediaElementSource(audio);
+      const respAnalyser = respCtx.createAnalyser();
+      
+      // Configure analyzer
+      respAnalyser.fftSize = 256;
+      respAnalyser.smoothingTimeConstant = 0.6;
+      
+      // Connect audio
+      source.connect(respAnalyser);
+      respAnalyser.connect(respCtx.destination);
+      
+      // Get data array
+      const dataArr = new Uint8Array(respAnalyser.frequencyBinCount);
+      
+      // Get canvas
+      const canvas = responseWaveform;
+      const ctx = canvas.getContext('2d');
+      
+      // Set canvas dimensions
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+      
+      // Draw function
+      function draw() {
+        if (audio.paused) return;
+        
+        requestAnimationFrame(draw);
+        
+        // Get data
+        respAnalyser.getByteFrequencyData(dataArr);
+        
+        // Clear canvas
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw bars
+        const barWidth = (canvas.width / dataArr.length) * 2.5;
+        let x = 0;
+        
+        for (let i = 0; i < dataArr.length; i++) {
+          const barHeight = (dataArr[i] / 255) * canvas.height;
+          
+          // Grayscale for response waveform
+          const intensity = Math.min(Math.floor((dataArr[i] / 255) * 200) + 55, 255);
+          ctx.fillStyle = `rgb(${intensity},${intensity},${intensity})`;
+          
+          // Draw bar
+          const y = canvas.height - barHeight;
+          ctx.fillRect(x, y, barWidth - 1, barHeight);
+          
+          x += barWidth;
+        }
+      }
+      
+      // Start drawing
+      draw();
+    }
+  </script>
+</body>
+</html>

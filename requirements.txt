@@ -1,0 +1,9 @@
+pydantic<2.0.0          # FastAPI requirement
+fastapi                  # Web framework
+uvicorn                  # ASGI server
+httpx                    # Ollama chat (Granite3.1-MoE 1B model)
+python-multipart         # File upload support
+python-dotenv            # Environment vars
+faster-whisper           # Audio transcription
+requests                 # HTTP client for ElevenLabs API
+llama-cpp-python         # LLaMA.cpp Python bindings
