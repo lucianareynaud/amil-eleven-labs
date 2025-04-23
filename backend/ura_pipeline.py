@@ -161,8 +161,8 @@ async def rewrite_to_ura(text: str) -> str:
     user_prompt = f'Reescreva o trecho abaixo conforme as **Regras de formatação e marcações SSML**:\n\n"{text}"'
     
     try:
-        # Create the full prompt in chat format that Mistral understands
-        prompt = f"<s>[INST] {system_prompt} [/INST]</s>[INST] {user_prompt} [/INST]"
+        # Create the prompt in chat format that Mistral understands, avoiding duplicate <s> tags
+        prompt = f"[INST] {system_prompt} [/INST][INST] {user_prompt} [/INST]"
         
         # Generate response with Mistral
         logger.info(f"Generating URA rewrite with Mistral (context size: {MISTRAL_N_CTX})")
