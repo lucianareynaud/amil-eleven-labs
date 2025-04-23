@@ -787,31 +787,43 @@
         method: 'POST',
         body: formData
       })
-      .then(response => {
+      .then(async response => {
         if (!response.ok) {
-          return response.json().then(errData => {
-            throw new Error(errData.detail || `Erro do servidor: ${response.status}`);
-          }).catch(err => {
-            // Se não conseguir fazer parse do JSON, usa o erro original
-            throw new Error(`Erro do servidor: ${response.status}`);
+          throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        document.getElementById('transcription').textContent = data.transcript;
+        document.getElementById('uraText').textContent = data.ura_text;
+        document.getElementById('uraResult').style.display = 'block';
+        
+        // Exibir mensagem de sucesso para o áudio
+        document.getElementById('audioSuccess').style.display = 'block';
+        
+        // Atualizar o botão de download com a URL do áudio
+        const downloadButton = document.getElementById('download-btn');
+        downloadButton.href = data.audio_url;
+        downloadButton.download = `ura_prompt_${data.request_id || 'audio'}.mp3`;
+        downloadButton.style.display = 'inline-block';
+        
+        // Reproduzir o áudio automaticamente
+        if (data.audio_url) {
+          const audio = new Audio(data.audio_url);
+          audio.addEventListener('loadeddata', () => {
+            console.log("Áudio carregado, iniciando reprodução...");
+            audio.play()
+               .catch(error => console.error("Erro ao reproduzir áudio:", error));
+          });
+          audio.addEventListener('error', (e) => {
+            console.error("Erro ao carregar áudio:", e);
+            document.getElementById('audioSuccess').textContent = "⚠️ Áudio gerado, mas não foi possível reproduzir automaticamente.";
           });
         }
-        return response.json();
-      })
-      .then(data => {
-        // Display original transcript and URA format
-        transcriptEl.innerHTML = `<strong>Original:</strong> ${data.transcript || 'Transcrição não disponível'}<br>
-                                 <strong>Formato URA:</strong> ${data.ura_text || 'Formatação URA falhou'}`;
         
-        // Play URA audio response
-        if (data.request_id) {
-          const audioUrl = `${API_BASE_URL}/download/${data.request_id}`;
-          playUraAudio(audioUrl, data.ura_text);
-        } else if (data.output_file) {
-          responseText.textContent = `Áudio gerado e salvo em: ${data.output_file}`;
-        } else {
-          responseText.textContent = 'Erro: Nenhum áudio foi gerado';
-        }
+        // Mostrar mensagem de sucesso
+        document.getElementById('success-message').style.display = 'block';
+        document.getElementById('success-message').textContent = "Prompt URA aprovado com sucesso!";
       })
       .catch(error => {
         console.error('Processing error:', error);

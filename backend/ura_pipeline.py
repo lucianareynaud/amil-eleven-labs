@@ -103,14 +103,22 @@ except Exception as e:
 # --- 1. TRANSCRIPTION PIPELINE ----------------------------------------------
 
 async def transcribe_audio(path: str) -> str:
-    """Transcribe audio using Whisper model"""
+    """Transcribe audio using Whisper model without post-processing"""
     if not whisper_model:
         raise HTTPException(500, "Whisper model failed to load")
     try:
-        segments, _ = whisper_model.transcribe(path)
-        return "".join(s.text for s in segments).strip()
+        # Use faster-whisper para transcrever, retornando segmentos brutos
+        segments, info = whisper_model.transcribe(path)
+        
+        # Juntar segmentos sem processamento adicional
+        raw_text = " ".join([seg.text for seg in segments])
+        
+        logger.info(f"✅ Whisper transcription: {raw_text}")
+        logger.info(f"📊 Detected language: {info.language} (probability: {info.language_probability:.2f})")
+        
+        return raw_text
     except Exception as e:
-        logger.error(f"Transcription error: {str(e)}")
+        logger.error(f"❌ Transcription error: {str(e)}")
         raise HTTPException(500, f"Transcription failed: {str(e)}")
 
 # --- 2. LLM PIPELINE -------------------------------------------------------
@@ -489,7 +497,7 @@ async def process_audio(file: UploadFile = File(...)):
     2. Rewrite to URA format with local LLM
     3. Validate, clean and annotate with SSML
     4. Synthesize using ElevenLabs
-    5. Return processing results
+    5. Return processing results with audio URL
     """
     # Create a unique ID for this request
     request_id = str(uuid.uuid4())
@@ -500,6 +508,11 @@ async def process_audio(file: UploadFile = File(...)):
     input_path = os.path.join(temp_dir, f"input_{request_id}")
     wav_path = os.path.join(temp_dir, f"input_{request_id}.wav")
     output_path = os.path.join(temp_dir, f"output_{request_id}.mp3")
+    
+    # Garantir que o diretório static/audio exista para armazenar áudios públicos
+    static_audio_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "audio")
+    os.makedirs(static_audio_dir, exist_ok=True)
+    public_audio_path = os.path.join(static_audio_dir, f"ura_prompt_{request_id}.mp3")
     
     try:
         # 1. Save uploaded audio
@@ -522,7 +535,7 @@ async def process_audio(file: UploadFile = File(...)):
             logger.error(f"❌ Erro ffmpeg: {error_msg}")
             raise HTTPException(400, f"Erro na conversão de áudio: {error_msg}")
         
-        # 2. Transcribe the audio
+        # 2. Transcribe the audio - mantendo formato original do Whisper
         logger.info(f"🎤 Transcrevendo áudio: {wav_path}")
         try:
             transcript = await transcribe_audio(wav_path)
@@ -581,11 +594,21 @@ async def process_audio(file: UploadFile = File(...)):
             logger.exception(f"❌ Erro na síntese: {str(e)}")
             raise HTTPException(500, f"Falha na síntese de voz: {str(e)}")
         
-        # 6. Save output file
+        # 6. Save output files (both to temp and static dirs for public access)
         try:
+            # Salvar no diretório temporário (para download via endpoint /download/{id})
             with open(output_path, "wb") as out:
                 out.write(audio_bytes)
-            logger.info(f"✅ Arquivo de áudio salvo: {output_path}")
+                
+            # Salvar no diretório static/audio para acesso direto via URL
+            with open(public_audio_path, "wb") as pub_out:
+                pub_out.write(audio_bytes)
+                
+            logger.info(f"✅ Arquivo de áudio salvo em: {output_path} e {public_audio_path}")
+            
+            # Criar URL pública para o áudio
+            audio_url = f"/static/audio/ura_prompt_{request_id}.mp3"
+            logger.info(f"🔗 URL pública do áudio: {audio_url}")
         except Exception as e:
             logger.exception(f"❌ Erro ao salvar áudio: {str(e)}")
             raise HTTPException(500, f"Falha ao salvar arquivo de áudio: {str(e)}")
@@ -599,10 +622,11 @@ async def process_audio(file: UploadFile = File(...)):
                 "transcript": transcript,
                 "ura_text": ura_clean,
                 "ssml": ura_ssml,
-                "output_file": output_path
+                "output_file": output_path,
+                "audio_url": audio_url  # URL para o áudio na pasta static
             }
             # Validar explicitamente que todos os campos estão presentes e são do tipo correto
-            if not all(k in response_data for k in ["status", "request_id", "transcript", "ura_text"]):
+            if not all(k in response_data for k in ["status", "request_id", "transcript", "ura_text", "audio_url"]):
                 logger.error(f"❌ Resposta incompleta: {response_data.keys()}")
                 raise ValueError("Resposta incompleta")
                 
@@ -616,7 +640,8 @@ async def process_audio(file: UploadFile = File(...)):
                 "request_id": request_id,
                 "error": f"Resposta parcial devido a erro: {str(e)}",
                 "transcript": transcript if "transcript" in locals() else None,
-                "output_file": output_path if os.path.exists(output_path) else None
+                "output_file": output_path if os.path.exists(output_path) else None,
+                "audio_url": audio_url if "audio_url" in locals() else None
             })
     
     except HTTPException:
