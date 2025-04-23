@@ -224,22 +224,44 @@ def validate_ura_text(text: str) -> None:
       - No segment longer than MAX_WORDS words
       - Total length under MAX_CHARS
     """
-    MAX_CHARS = 500
-    MAX_WORDS = 12
+    if text is None:
+        logger.error("❌ Texto URA é None")
+        raise HTTPException(400, "Texto URA está vazio")
+        
+    if not isinstance(text, str):
+        logger.error(f"❌ Texto URA não é string: {type(text)}")
+        raise HTTPException(400, f"Tipo de texto inválido: {type(text)}")
+    
+    # Verifica se o texto está vazio
+    if not text.strip():
+        logger.error("❌ Texto URA está vazio após strip()")
+        raise HTTPException(400, "Texto URA está vazio")
 
+    # Limite de caracteres
+    MAX_CHARS = 2000  # Aumentado para acomodar textos mais longos
     if len(text) > MAX_CHARS:
-        raise HTTPException(400, f"Text too long for a single prompt ({len(text)} chars)")
+        logger.error(f"❌ Texto URA muito longo: {len(text)} caracteres")
+        raise HTTPException(400, f"Texto muito longo para um único prompt ({len(text)} caracteres, máximo {MAX_CHARS})")
 
-    # whitelist check
-    if re.search(r"[^0-9A-Za-zÀ-ÿ ,\.;\?!\u00C1-\u017F]", text):
-        raise HTTPException(400, "Text contains unsupported characters")
+    # Verifica caracteres não permitidos
+    whitelist_regex = r"[^0-9A-Za-zÀ-ÿ ,\.;\?!\u00C1-\u017F]"
+    invalid_chars = re.findall(whitelist_regex, text)
+    if invalid_chars:
+        unique_invalid = set(invalid_chars)
+        logger.error(f"❌ Caracteres não permitidos: {unique_invalid}")
+        raise HTTPException(400, f"O texto contém caracteres não suportados: {', '.join(unique_invalid)}")
 
-    # segment length check
+    # Verifica comprimento dos segmentos
+    MAX_WORDS = 15  # Aumentado ligeiramente para mais flexibilidade
     segments = re.split(r"[\.;\?!]\s*", text)
     for seg in segments:
         word_count = len(seg.strip().split())
         if word_count > MAX_WORDS:
-            raise HTTPException(400, f"Segment too long ({word_count} words): \"{seg}\"")
+            truncated_seg = seg[:50] + "..." if len(seg) > 50 else seg
+            logger.error(f"❌ Segmento muito longo: {word_count} palavras - '{truncated_seg}'")
+            raise HTTPException(400, f"Segmento muito longo ({word_count} palavras, máximo {MAX_WORDS}): \"{truncated_seg}\"")
+    
+    logger.info("✅ Validação do texto URA bem-sucedida")
 
 def clean_text(text: str) -> str:
     """
@@ -336,6 +358,7 @@ async def process_audio(file: UploadFile = File(...)):
     """
     # Create a unique ID for this request
     request_id = str(uuid.uuid4())
+    logger.info(f"📝 Iniciando processamento de audio [request_id={request_id}]")
     
     # Set up temporary file paths
     temp_dir = tempfile.mkdtemp()
@@ -346,57 +369,127 @@ async def process_audio(file: UploadFile = File(...)):
     try:
         # 1. Save uploaded audio
         with open(input_path, "wb") as f:
-            f.write(await file.read())
+            content = await file.read()
+            if not content:
+                logger.error("❌ Arquivo de áudio vazio recebido")
+                raise HTTPException(400, "Arquivo de áudio vazio. Por favor, envie um áudio válido.")
+            f.write(content)
+            logger.info(f"✅ Áudio salvo: {input_path} ({len(content)} bytes)")
         
         # Convert to WAV for Whisper
+        logger.info(f"🔄 Convertendo para WAV: {wav_path}")
         ff = subprocess.run(
             ["ffmpeg", "-y", "-i", input_path, "-ac", "1", "-ar", "16000", wav_path],
             capture_output=True
         )
         if ff.returncode != 0:
             error_msg = ff.stderr.decode().strip()
-            logger.error(f"ffmpeg error: {error_msg}")
-            raise HTTPException(500, f"Audio conversion error: {error_msg}")
+            logger.error(f"❌ Erro ffmpeg: {error_msg}")
+            raise HTTPException(400, f"Erro na conversão de áudio: {error_msg}")
         
         # 2. Transcribe the audio
-        transcript = await transcribe_audio(wav_path)
-        logger.info(f"Transcribed text: {transcript}")
-        
-        if not transcript or transcript.strip() == "":
-            logger.warning("Empty transcript from Whisper")
-            raise HTTPException(400, "Could not understand audio. Please try again.")
+        logger.info(f"🎤 Transcrevendo áudio: {wav_path}")
+        try:
+            transcript = await transcribe_audio(wav_path)
+            logger.info(f"✅ Texto transcrito ({len(transcript)} caracteres): {transcript}")
+            
+            if not transcript or transcript.strip() == "":
+                logger.warning("❌ Transcrição vazia do Whisper")
+                raise HTTPException(400, "Não foi possível entender o áudio. Por favor, tente novamente com uma gravação mais clara.")
+        except Exception as e:
+            logger.exception(f"❌ Erro na transcrição: {str(e)}")
+            raise HTTPException(500, f"Falha na transcrição: {str(e)}")
         
         # 3. Rewrite via local LLM to URA style
-        ura_raw = await rewrite_to_ura(transcript)
+        logger.info(f"🤖 Enviando para reescrita Mistral: {len(transcript)} caracteres")
+        try:
+            ura_raw = await rewrite_to_ura(transcript)
+            if not ura_raw or not isinstance(ura_raw, str) or ura_raw.strip() == "":
+                logger.error(f"❌ Resultado inválido do Mistral: {type(ura_raw)}")
+                raise HTTPException(500, "O modelo de linguagem retornou uma resposta inválida. Por favor, tente novamente.")
+            
+            # Truncate if needed to prevent downstream issues
+            if len(ura_raw) > 2000:
+                logger.warning(f"⚠️ Texto URA muito longo, truncando de {len(ura_raw)} para 2000 caracteres")
+                ura_raw = ura_raw[:2000]
+                
+            logger.info(f"✅ Texto URA gerado ({len(ura_raw)} caracteres): {ura_raw}")
+        except Exception as e:
+            logger.exception(f"❌ Erro na reescrita URA: {str(e)}")
+            raise HTTPException(500, f"Falha na geração do formato URA: {str(e)}")
         
         # 4. Validate + Clean + Annotate
-        validate_ura_text(ura_raw)
-        ura_clean = clean_text(ura_raw)
-        ura_ssml = annotate_ura_ssml(ura_clean, pause_ms=400)
+        logger.info("🔍 Validando e formatando texto URA")
+        try:
+            validate_ura_text(ura_raw)
+            ura_clean = clean_text(ura_raw)
+            ura_ssml = annotate_ura_ssml(ura_clean, pause_ms=400)
+            logger.info(f"✅ SSML gerado ({len(ura_ssml)} caracteres)")
+        except HTTPException as he:
+            # Pass through HTTP exceptions with their status code
+            logger.error(f"❌ Validação falhou: {str(he.detail)}")
+            raise he
+        except Exception as e:
+            logger.exception(f"❌ Erro na formatação: {str(e)}")
+            raise HTTPException(500, f"Falha na formatação do texto: {str(e)}")
         
         # 5. Synthesize with ElevenLabs
-        audio_bytes = synthesize_with_elevenlabs(ura_ssml)
+        logger.info("🔊 Sintetizando áudio com ElevenLabs")
+        try:
+            audio_bytes = synthesize_with_elevenlabs(ura_ssml)
+            if not audio_bytes or len(audio_bytes) < 100:
+                logger.error(f"❌ ElevenLabs retornou áudio inválido: {len(audio_bytes) if audio_bytes else 0} bytes")
+                raise HTTPException(500, "Falha na síntese de voz. Por favor, tente novamente.")
+            
+            logger.info(f"✅ Áudio sintetizado: {len(audio_bytes)} bytes")
+        except Exception as e:
+            logger.exception(f"❌ Erro na síntese: {str(e)}")
+            raise HTTPException(500, f"Falha na síntese de voz: {str(e)}")
         
         # 6. Save output file
-        with open(output_path, "wb") as out:
-            out.write(audio_bytes)
+        try:
+            with open(output_path, "wb") as out:
+                out.write(audio_bytes)
+            logger.info(f"✅ Arquivo de áudio salvo: {output_path}")
+        except Exception as e:
+            logger.exception(f"❌ Erro ao salvar áudio: {str(e)}")
+            raise HTTPException(500, f"Falha ao salvar arquivo de áudio: {str(e)}")
         
-        # 7. Return results
-        return JSONResponse({
-            "status": "ok",
-            "request_id": request_id,
-            "transcript": transcript,
-            "ura_text": ura_clean,
-            "ssml": ura_ssml,
-            "output_file": output_path
-        })
+        # 7. Prepare and return final response
+        logger.info(f"🏁 Montando resposta final para request_id={request_id}")
+        try:
+            response_data = {
+                "status": "ok",
+                "request_id": request_id,
+                "transcript": transcript,
+                "ura_text": ura_clean,
+                "ssml": ura_ssml,
+                "output_file": output_path
+            }
+            # Validar explicitamente que todos os campos estão presentes e são do tipo correto
+            if not all(k in response_data for k in ["status", "request_id", "transcript", "ura_text"]):
+                logger.error(f"❌ Resposta incompleta: {response_data.keys()}")
+                raise ValueError("Resposta incompleta")
+                
+            logger.info("✅ Processamento completo com sucesso")
+            return JSONResponse(response_data)
+        except Exception as e:
+            logger.exception(f"❌ Erro ao montar resposta JSON final: {str(e)}")
+            # Resposta simplificada de fallback
+            return JSONResponse({
+                "status": "partial_success",
+                "request_id": request_id,
+                "error": f"Resposta parcial devido a erro: {str(e)}",
+                "transcript": transcript if "transcript" in locals() else None,
+                "output_file": output_path if os.path.exists(output_path) else None
+            })
     
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in process_audio: {str(e)}")
-        raise HTTPException(500, f"Server error: {str(e)}")
+        logger.exception(f"❌ Erro inesperado em process_audio: {str(e)}")
+        raise HTTPException(500, f"Erro no servidor: {str(e)}")
     finally:
         # Don't clean up output file as it might be needed, but clean original files
         try:
@@ -405,7 +498,7 @@ async def process_audio(file: UploadFile = File(...)):
             if os.path.exists(wav_path):
                 os.remove(wav_path)
         except Exception as e:
-            logger.warning(f"Cleanup error: {str(e)}")
+            logger.warning(f"⚠️ Erro na limpeza: {str(e)}")
 
 @app.post("/regenerate-audio")
 async def regenerate_audio(text: str = Form(...)):
@@ -418,55 +511,118 @@ async def regenerate_audio(text: str = Form(...)):
     """
     # Create a unique ID for this request
     request_id = str(uuid.uuid4())
+    logger.info(f"📝 Iniciando regeneração de áudio [request_id={request_id}]")
     
     # Set up temporary file paths
     temp_dir = tempfile.mkdtemp()
     output_path = os.path.join(temp_dir, f"output_{request_id}.mp3")
     
     try:
+        # Verificar se o texto foi recebido
+        if not text:
+            logger.error("❌ Texto vazio recebido para regeneração")
+            raise HTTPException(400, "Texto vazio. Por favor, forneça um texto para geração de áudio.")
+            
+        logger.info(f"📄 Texto recebido para regeneração ({len(text)} caracteres)")
+        
         # 1. Validate the edited text
-        validate_ura_text(text)
+        logger.info("🔍 Validando texto URA")
+        try:
+            validate_ura_text(text)
+        except HTTPException as he:
+            logger.error(f"❌ Validação falhou: {str(he.detail)}")
+            raise he
+        except Exception as e:
+            logger.exception(f"❌ Erro na validação: {str(e)}")
+            raise HTTPException(500, f"Falha na validação do texto: {str(e)}")
         
         # 2. Clean and annotate with SSML
-        ura_clean = clean_text(text)
-        ura_ssml = annotate_ura_ssml(ura_clean, pause_ms=400)
+        logger.info("📝 Formatando texto em SSML")
+        try:
+            ura_clean = clean_text(text)
+            ura_ssml = annotate_ura_ssml(ura_clean, pause_ms=400)
+            logger.info(f"✅ SSML gerado ({len(ura_ssml)} caracteres)")
+        except Exception as e:
+            logger.exception(f"❌ Erro na formatação SSML: {str(e)}")
+            raise HTTPException(500, f"Falha na formatação SSML: {str(e)}")
         
         # 3. Synthesize with ElevenLabs
-        audio_bytes = synthesize_with_elevenlabs(ura_ssml)
+        logger.info("🔊 Sintetizando áudio com ElevenLabs")
+        try:
+            audio_bytes = synthesize_with_elevenlabs(ura_ssml)
+            if not audio_bytes or len(audio_bytes) < 100:
+                logger.error(f"❌ ElevenLabs retornou áudio inválido: {len(audio_bytes) if audio_bytes else 0} bytes")
+                raise HTTPException(500, "Falha na síntese de voz. Por favor, tente novamente.")
+            
+            logger.info(f"✅ Áudio sintetizado: {len(audio_bytes)} bytes")
+        except Exception as e:
+            logger.exception(f"❌ Erro na síntese: {str(e)}")
+            raise HTTPException(500, f"Falha na síntese de voz: {str(e)}")
         
         # 4. Save output file
-        with open(output_path, "wb") as out:
-            out.write(audio_bytes)
+        try:
+            with open(output_path, "wb") as out:
+                out.write(audio_bytes)
+            logger.info(f"✅ Arquivo de áudio salvo: {output_path}")
+        except Exception as e:
+            logger.exception(f"❌ Erro ao salvar áudio: {str(e)}")
+            raise HTTPException(500, f"Falha ao salvar arquivo de áudio: {str(e)}")
         
         # 5. Return results
-        return JSONResponse({
-            "status": "ok",
-            "request_id": request_id,
-            "ura_text": ura_clean,
-            "ssml": ura_ssml,
-            "output_file": output_path
-        })
+        logger.info(f"🏁 Montando resposta final para request_id={request_id}")
+        try:
+            response_data = {
+                "status": "ok",
+                "request_id": request_id,
+                "ura_text": ura_clean,
+                "ssml": ura_ssml,
+                "output_file": output_path
+            }
+            logger.info("✅ Regeneração completa com sucesso")
+            return JSONResponse(response_data)
+        except Exception as e:
+            logger.exception(f"❌ Erro ao montar resposta JSON final: {str(e)}")
+            # Resposta simplificada de fallback
+            return JSONResponse({
+                "status": "partial_success",
+                "request_id": request_id,
+                "error": f"Resposta parcial devido a erro: {str(e)}",
+                "output_file": output_path if os.path.exists(output_path) else None
+            })
     
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in regenerate_audio: {str(e)}")
-        raise HTTPException(500, f"Server error: {str(e)}")
-
-# --- OPTIONAL: FILE DOWNLOAD ENDPOINT --------------------------------------
+        logger.exception(f"❌ Erro inesperado em regenerate_audio: {str(e)}")
+        raise HTTPException(500, f"Erro no servidor: {str(e)}")
 
 @app.get("/download/{request_id}")
 async def download_audio(request_id: str):
     """Download the generated audio file by request ID"""
+    logger.info(f"📥 Solicitação de download para request_id={request_id}")
+    
+    # Validar ID da requisição
+    if not request_id or not re.match(r'^[a-f0-9\-]+$', request_id):
+        logger.error(f"❌ ID de requisição inválido: {request_id}")
+        raise HTTPException(400, "ID de requisição inválido")
+    
     temp_dir = tempfile.gettempdir()
     output_path = os.path.join(temp_dir, f"output_{request_id}.mp3")
     
     if not os.path.exists(output_path):
-        raise HTTPException(404, "Audio file not found")
+        logger.error(f"❌ Arquivo de áudio não encontrado: {output_path}")
+        raise HTTPException(404, "Arquivo de áudio não encontrado. Talvez tenha expirado ou nunca foi gerado.")
     
-    return FileResponse(
-        output_path,
-        media_type="audio/mpeg",
-        filename=f"ura_audio_{request_id}.mp3"
-    ) 
+    try:
+        file_size = os.path.getsize(output_path)
+        logger.info(f"✅ Enviando arquivo de áudio: {output_path} ({file_size} bytes)")
+        
+        return FileResponse(
+            output_path,
+            media_type="audio/mpeg",
+            filename=f"ura_audio_{request_id}.mp3"
+        )
+    except Exception as e:
+        logger.exception(f"❌ Erro ao enviar arquivo: {str(e)}")
+        raise HTTPException(500, f"Erro ao enviar arquivo: {str(e)}") 
