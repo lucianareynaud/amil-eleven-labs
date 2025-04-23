@@ -351,7 +351,8 @@
     <!-- Transcript display -->
     <div id="transcript">
       <span class="helper-text">Grave o áudio para criar prompts de URA<br>
-      Sua gravação será transcrita, reformatada para padrões URA, e sintetizada com voz de alta qualidade</span>
+      Sua gravação será transcrita, reformatada para padrões URA, e sintetizada com voz de alta qualidade<br>
+      Se ocorrer algum erro, basta pressionar o botão vermelho para tentar novamente</span>
     </div>
     
     <div id="response-container">
@@ -506,6 +507,9 @@
       
       console.log('Button clicked, recording state:', isRecording);
       
+      // Limpar mensagens de erro anteriores
+      clearErrorState();
+      
       if (isRecording) {
         stopRecording();
       } else {
@@ -519,6 +523,30 @@
       }
     }
     
+    // Nova função para limpar estado de erro
+    function clearErrorState() {
+      // Limpar qualquer mensagem de erro no DOM
+      transcriptEl.textContent = '';
+      responseText.textContent = '';
+      
+      // Esconder containers de aprovação e download se visíveis
+      document.getElementById('approval-container').style.display = 'none';
+      document.getElementById('download-container').style.display = 'none';
+      document.getElementById('edit-container').style.display = 'none';
+      document.getElementById('success-message').style.display = 'none';
+      
+      // Resetar variáveis globais
+      currentUraText = '';
+      currentRequestId = '';
+      currentAudioUrl = '';
+      
+      // Parar qualquer áudio em reprodução
+      if (audioElement && !audioElement.paused) {
+        audioElement.pause();
+        audioElement.currentTime = 0;
+      }
+    }
+    
     // Start microphone capture
     function startMicrophoneCapture() {
       // Make sure we have an audio context
@@ -528,7 +556,7 @@
       
       // Disable button and show status
       btn.disabled = true;
-      cta.textContent = 'Accessing microphone...';
+      cta.textContent = 'Acessando microfone...';
       
       // Request microphone access using all available methods
       const constraints = {
@@ -541,23 +569,55 @@
       
       console.log('Requesting microphone access...');
       
+      // Definir timeout para re-habilitar o botão caso haja demora
+      const micAccessTimeout = setTimeout(() => {
+        if (btn.disabled) {
+          console.warn('Tempo esgotado esperando acesso ao microfone');
+          btn.disabled = false;
+          cta.textContent = 'Tempo esgotado. Tente novamente.';
+        }
+      }, 10000); // 10 segundos de timeout
+      
       // Try the standard approach first
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         navigator.mediaDevices.getUserMedia(constraints)
-          .then(handleSuccessfulMicrophoneAccess)
-          .catch(handleMicrophoneAccessError);
+          .then(stream => {
+            clearTimeout(micAccessTimeout);
+            handleSuccessfulMicrophoneAccess(stream);
+          })
+          .catch(error => {
+            clearTimeout(micAccessTimeout);
+            handleMicrophoneAccessError(error);
+          });
       } 
       // Fallback for older browsers
       else if (navigator.getUserMedia) {
-        navigator.getUserMedia(constraints, handleSuccessfulMicrophoneAccess, handleMicrophoneAccessError);
+        navigator.getUserMedia(constraints, 
+          stream => {
+            clearTimeout(micAccessTimeout);
+            handleSuccessfulMicrophoneAccess(stream);
+          }, 
+          error => {
+            clearTimeout(micAccessTimeout);
+            handleMicrophoneAccessError(error);
+          });
       }
       // Fallback for webkit/moz prefixed implementations
       else if (navigator.webkitGetUserMedia || navigator.mozGetUserMedia) {
         const legacyGetUserMedia = navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
-        legacyGetUserMedia.call(navigator, constraints, handleSuccessfulMicrophoneAccess, handleMicrophoneAccessError);
+        legacyGetUserMedia.call(navigator, constraints, 
+          stream => {
+            clearTimeout(micAccessTimeout);
+            handleSuccessfulMicrophoneAccess(stream);
+          }, 
+          error => {
+            clearTimeout(micAccessTimeout);
+            handleMicrophoneAccessError(error);
+          });
       }
       // No getUserMedia support
       else {
+        clearTimeout(micAccessTimeout);
         handleMicrophoneAccessError(new Error('No getUserMedia support available in this browser'));
       }
     }
@@ -672,13 +732,38 @@
       
       // Stop recording
       if (recorder && recorder.state !== 'inactive') {
-        recorder.onstop = handleRecordingComplete;
-        recorder.stop();
-        console.log('MediaRecorder stopped');
+        try {
+          recorder.onstop = handleRecordingComplete;
+          recorder.stop();
+          console.log('MediaRecorder stopped');
+        } catch (err) {
+          console.error('Erro ao parar gravação:', err);
+          handleRecordingError('Erro ao parar gravação');
+        }
       } else {
         console.log('No active recorder to stop');
         handleRecordingComplete();
       }
+    }
+    
+    // Nova função para lidar com erros de gravação
+    function handleRecordingError(errorMsg) {
+      console.error(errorMsg);
+      isRecording = false;
+      btn.classList.remove('recording');
+      cta.textContent = 'Pressione para gravar';
+      
+      // Limpar visualização
+      if (visualizationFrame) {
+        cancelAnimationFrame(visualizationFrame);
+      }
+      waveformCanvas.style.display = 'none';
+      
+      // Mostrar mensagem de erro
+      transcriptEl.textContent = errorMsg || 'Erro de gravação. Tente novamente.';
+      
+      // Garantir que o botão esteja habilitado
+      btn.disabled = false;
     }
     
     // Handle completed recording
@@ -704,7 +789,12 @@
       })
       .then(response => {
         if (!response.ok) {
-          throw new Error(`Server error: ${response.status}`);
+          return response.json().then(errData => {
+            throw new Error(errData.detail || `Erro do servidor: ${response.status}`);
+          }).catch(err => {
+            // Se não conseguir fazer parse do JSON, usa o erro original
+            throw new Error(`Erro do servidor: ${response.status}`);
+          });
         }
         return response.json();
       })
@@ -726,6 +816,10 @@
       .catch(error => {
         console.error('Processing error:', error);
         transcriptEl.textContent = `Erro: ${error.message}`;
+        responseText.textContent = `Ocorreu um erro. Clique no botão para tentar novamente.`;
+        
+        // Re-habilitar o botão após erro para permitir nova tentativa
+        btn.disabled = false;
       })
       .finally(() => {
         cta.textContent = 'Pressione para gravar';
